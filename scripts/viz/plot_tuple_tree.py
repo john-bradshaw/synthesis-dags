@@ -107,7 +107,6 @@ def convert_tuple_tree_to_js(tuple_tree):
     return json.dumps(out_dict), all_smi
 
 
-
 def main(tuple_tree):
     smiles_to_draw = set()
 

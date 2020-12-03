@@ -12,7 +12,8 @@ from graph_neural_networks.ggnn_general import ggnn_base
 
 class DogGen(nn.Module):
     """
-    Wrapper around the Dog Generator to make it more obviously into just a RNN rather than part of a autoencoder
+    Wrapper around the Dog Generator to make it more obviously into just a autoregressive model
+    rather than part of an autoencoder
     """
     def __init__(self, dog_gen: dog_decoder.DOGGenerator, initial_z_size):
         super().__init__()
@@ -21,7 +22,7 @@ class DogGen(nn.Module):
         self.mol_embdr = dog_gen.other_nets.mol_embdr
 
     def forward(self, obs: synthesis_trees.PredOutBatch):
-        """ Goes to loss"""
+        """Gets the negative log likelihood of observation for training (nb note this is via teacher forcing)"""
         self._update_gen(obs.batch_size)
         loss = self.dog_gen.nlog_like_of_obs(obs)
         return loss
@@ -34,7 +35,9 @@ class DogGen(nn.Module):
 
     def _update_gen(self, batch_size):
         device = next(self.dog_gen.parameters()).device
+        # ^ get the Torch device from the model by looking at where its parameters live.
         initial_hidden = torch.zeros((batch_size, self.initial_z_size), dtype=settings.TORCH_FLT, device=device)
+        # ^ for DoG-Gen the initial hidden layer is always set at the same value
         self.dog_gen.update(initial_hidden)
 
 
@@ -57,7 +60,7 @@ def get_dog_gen(react_pred: reaction_predictors.AbstractReactionPredictor, smi2g
     decoder_rnn_hidden_size = params['decoder_params']['gru_hsize']
     decoder_embdg_dim = mol_embedder.embedding_dim
     decoder_nets = dog_decoder.DecoderPreDefinedNetworks(
-        None, mol_embedder,
+        mol_embedder,
         f_z_to_h0=nn.Linear(params['latent_dim'], decoder_rnn_hidden_size),
         f_ht_to_e_add=nn.Sequential(nn.Linear(decoder_rnn_hidden_size, 28), nn.ReLU(),
                                     nn.Linear(28, decoder_embdg_dim)),

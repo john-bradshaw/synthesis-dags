@@ -38,7 +38,6 @@ class DecoderParams:
 
 class DecoderPreDefinedNetworks(nn.Module):
     def __init__(self,
-                 dag_embdr: dag_embedder.DAGEmbedder,  # embed DAGs of molecular graphs
                  mol_embdr: mol_graph_embedder.GraphEmbedder,  # embeds the molecular graphs
                  f_z_to_h0: nn.Module,  # function from the input to the initial settings of the hidden layers.
 
@@ -46,7 +45,6 @@ class DecoderPreDefinedNetworks(nn.Module):
                  f_ht_to_e_reactant: nn.Module,
                  f_ht_to_e_edge: nn.Module):
         super().__init__()
-        self.dag_embdr = dag_embdr
         self.mol_embdr = mol_embdr
         self.f_z_to_h0 = f_z_to_h0
         self.f_ht_to_e_add = f_ht_to_e_add
@@ -112,8 +110,6 @@ class DOGGenerator(base_parameterised_distribution.BaseParameterisedDistribution
         self._initial_hidden_after_update = None
         self.reactant_vocab = reactant_vocab
         self.smi2graph = smi2graph
-
-
 
     def _compute_initial_h(self, z_sample):
         h_samples = self.other_nets.f_z_to_h0(z_sample)

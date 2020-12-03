@@ -1,14 +1,12 @@
 """Evaluate Metrics
 
 
-
 Usage:
   evaluate_metrics.py  [--config=<config>]
 
 Options:
   --config=<config>  The path to the config file [default: tables_spec.json].
 """
-
 
 import json
 from os import path
@@ -17,8 +15,6 @@ import typing
 import random
 import sys
 import warnings
-
-
 import multiprocessing as mp
 from multiprocessing import Pool
 
@@ -32,16 +28,14 @@ from docopt import docopt
 
 from guacamol import frechet_benchmark
 import fcd
-
 from rd_filters import rd_filters
-
-
-from syn_dags.chem_ops import rdkit_general_ops
-from syn_dags.script_utils import train_utils
 
 from rdkit import RDLogger
 lg = RDLogger.logger()
 lg.setLevel(RDLogger.CRITICAL)
+
+from syn_dags.chem_ops import rdkit_general_ops
+from syn_dags.script_utils import train_utils
 
 THIS_FILE_DIR = path.dirname(__file__)
 
@@ -277,7 +271,6 @@ class Params:
         # Config to read:
         arguments = docopt(__doc__)
         self.experiments_config = arguments['--config']
-
 
         # Reactants file
         self.training_trees = train_utils.load_tuple_trees('../../dataset_creation/data/'

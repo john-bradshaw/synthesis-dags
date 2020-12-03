@@ -5,26 +5,12 @@ https://github.com/pytorch/ignite
 """
 
 import time
-import typing
 
-import torch
 import numpy as np
 import tabulate
 
-from ignite.engine.engine import Engine, State, Events
-from ignite.utils import convert_tensor
+from ignite.engine.engine import Engine
 from torch.nn.utils import clip_grad_norm_
-
-
-
-
-def _prepare_batch(batch, device=None, non_blocking=False):
-    """Prepare batch for training: pass to a device with options.
-
-    """
-    x, y = batch
-    return (convert_tensor(x, device=device, non_blocking=non_blocking),
-            convert_tensor(y, device=device, non_blocking=non_blocking))
 
 
 class AverageMeter(object):
@@ -95,25 +81,21 @@ class AvgMeterHolder:
         return str(tabulate.tabulate(table))
 
 
-
-
-
-def create_supervised_trainer_timers(model, optimizer, loss_fn,
+def create_unsupervised_trainer_timers(model, optimizer, loss_fn,
                               device,
                               prepare_batch,
-                              output_transform=lambda x, y, loss: loss.item(),
-                            max_norm=np.inf):
+                              output_transform=lambda x, loss: loss.item(),
+                              max_norm=np.inf):
     """
+    Factory function for creating a trainer for unsupervised models.
+    Adapted from the regular one in Pytorch
 
-    Factory function for creating a trainer for (un)supervised models.
-    Adapted from the refular one in Pytorch
 
-
-    Note: `engine.state.output` for this engine is defind by `output_transform` parameter and is the loss
+    Note: `engine.state.output` for this engine is defined by `output_transform` parameter and is the loss
         of the processed batch by default.
 
     Returns:
-        Engine: a trainer engine with supervised update function.
+        Engine: a trainer engine with unsupervised update function.
     """
     if device:
         model.to(device)
@@ -124,16 +106,16 @@ def create_supervised_trainer_timers(model, optimizer, loss_fn,
         s_time = time.time()
         model.train()
         optimizer.zero_grad()
-        x, y = prepare_batch(batch, device=device)
+        x = prepare_batch(batch, device=device)
         timings.time_to_get_batch.update(time.time()-s_time)
-        loss = loss_fn(model, x, y)
+        loss = loss_fn(model, x)
         timings.time_to_forward.update(time.time()-s_time)
         loss.backward()
         if max_norm != np.inf:
             clip_grad_norm_(model.parameters(), max_norm)
         optimizer.step()
         timings.time_to_step.update(time.time()-s_time)
-        return output_transform(x, y, loss)
+        return output_transform(x, loss)
 
     return Engine(_update), timings
 

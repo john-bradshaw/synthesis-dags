@@ -3,7 +3,6 @@ Script to create Synthesis DAGs dataset.
 
 """
 
-
 import typing
 from os import path
 import subprocess
@@ -144,6 +143,7 @@ def main(params):
     subprocess.run((f"cd {PATH}; shasum -a 256 * >"
                     f" {datetime.datetime.now().isoformat()}_data_checklist.sha256"),
                    shell=True)
+
 
 if __name__ == '__main__':
     main(params)

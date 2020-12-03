@@ -1,31 +1,34 @@
-"""
-Before running add in weights name as a property of Params class.
+"""Sample from prior
+
+
+Usage:
+  sample_from_prior.py  <weight_path>
+
 """
 
 from time import strftime, gmtime
 from os import path
-import os
 
 import numpy as np
 import torch
 from tqdm import tqdm
+from docopt import docopt
 
 from syn_dags.script_utils import dogae_utils
 from syn_dags.utils import misc
-from syn_dags.data import synthesis_trees
-from syn_dags.script_utils import opt_utils
+from syn_dags.utils import settings
+
+SAMPLE_DIR = 'samples'
 
 
 class Params:
-    def __init__(self):
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    def __init__(self, weight_path):
+        self.device = settings.torch_device()
 
-        self.weight_path = ""
+        self.weight_path = weight_path
 
         self.batch_size = 200
         self.num_batches = 100
-
-        self.lambda_value = 10.  # see WAE paper, section 4
 
         time_run = strftime("%y-%m-%d_%H:%M:%S", gmtime())
         f_name_weights = path.splitext(path.basename(self.weight_path))[0]
@@ -35,28 +38,26 @@ class Params:
 
 
 def main(params: Params):
-    # Seeds
+    # Seed
     rng = np.random.RandomState(564165)
     torch.manual_seed(15616)
-    os.makedirs(path.join("out_preds", params.run_name))
 
     # Model!
     log_path = path.join("logs", f"reactions-{params.run_name}.log")
-    model, __collate_func, *_ = dogae_utils.load_model(params.weight_path, params.device, params.reaction_predictor_server_address,
-                                                       log_path)
+    model, __collate_func, *_ = dogae_utils.load_dogae_model(params.device, log_path, weight_path=params.weight_path)
 
-    # Sample"
+    # Sample!
     out_tuple_trees = []
     all_z = []
-    for batch in tqdm(range(params.num_batches), desc="sampling a batch"):
+    for _ in tqdm(range(params.num_batches), desc="sampling a batch"):
         out, z, _ = dogae_utils.sample_n_from_prior(model, params.batch_size, rng, return_extras=True)
         all_z.append(z.detach().cpu().numpy())
         out_tuple_trees.extend(out)
     all_z = np.concatenate(all_z, axis=0)
 
     # Write out!
-    pickle_name = path.join("samples", f"out_trees_{params.run_name}.pick")
-    root_smi_txt_name = path.join("samples", f"out_final_smi_{params.run_name}.txt")
+    pickle_name = path.join(SAMPLE_DIR, f"out_trees_{params.run_name}.pick")
+    root_smi_txt_name = path.join(SAMPLE_DIR, f"out_final_smi_{params.run_name}.txt")
 
     misc.to_pickle({'tuple_trees': out_tuple_trees,
                     'all_z': all_z}, pickle_name)
@@ -69,5 +70,8 @@ def main(params: Params):
 
 
 if __name__ == '__main__':
-    main(Params())
+    arguments = docopt(__doc__)
+    weight_path = arguments['<weight_path>']
+    main(Params(weight_path))
     print("Done!")
+

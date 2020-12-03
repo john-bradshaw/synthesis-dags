@@ -1,5 +1,4 @@
 
-import time
 import functools
 
 from torch.utils.tensorboard import SummaryWriter

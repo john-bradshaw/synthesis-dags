@@ -28,6 +28,7 @@ def load_tuple_trees(path_to_trees: str,
     syn_trees = [create_tuple_trees(el) for el in tqdm.tqdm(data, desc="Loading in tuple trees")]
     return syn_trees
 
+
 def load_reactant_vocab(path_to_json: str) -> typing.List[str]:
     with open(path_to_json, 'r') as fo:
         d = json.load(fo)

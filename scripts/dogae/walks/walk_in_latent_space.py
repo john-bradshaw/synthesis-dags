@@ -1,10 +1,12 @@
-"""
-Add in  path to weights as property of Params class
+"""Walk in latent space
+This walks randomly in latent space
+
+Usage:
+  walk_in_latent_space.py <weight_path>
+
 """
 
 
-import typing
-import uuid
 from time import strftime, gmtime
 from os import path
 import os
@@ -13,28 +15,27 @@ import numpy as np
 import torch
 from torch.nn import functional as F
 from tqdm import tqdm
+from docopt import docopt
 
 from syn_dags.script_utils import train_utils
 from syn_dags.script_utils import dogae_utils
 from syn_dags.utils import misc
 from syn_dags.data import synthesis_trees
-from syn_dags.script_utils import opt_utils
 
+OUT_DIR = "out_walks"
 
 class Params:
-    def __init__(self):
+    def __init__(self, weight_path):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         self.tuple_tree_path = "../../dataset_creation/data/uspto-train-depth_and_tree_tuples.pick"
-        self.weight_path = "put the path to the trained weights here."
+        self.weight_path = weight_path
 
         self.num_starting_locations = 50
         self.num_steps_before_filtering = 30
         self.epsilon = 0.01
         self.num_unique_after = 6
         self.include_same_trees_different_order = False
-
-        self.lambda_value = 10.  # see WAE paper, section 4
 
         self.walk_strategy = "random"
         print(self.walk_strategy)
@@ -47,8 +48,10 @@ class Params:
         print(f"Tuple tree path (where we pick starting points from)  is {self.tuple_tree_path}")
 
 
-
 def get_walk_direction_function(name):
+    # Although we only consider walking randomly we leave it open to consider alternative ways to explore the latent
+    # space in the future
+
     if name == 'random':
         # Set up function that will give direction to walk in
         def get_direction(model, current_z):
@@ -65,8 +68,9 @@ def main(params: Params):
 
     # Model!
     log_path = path.join("logs", f"reactions-{params.run_name}.log")
-    model, collate_func, *_ = dogae_utils.load_model(params.weight_path, params.device, params.reaction_predictor_server_address,
-                                                       log_path)
+    model, collate_func, *_ = dogae_utils.load_dogae_model(params.device, log_path,
+                                                           weight_path=params.weight_path)
+
     # Some starting locations
     tuple_trees = train_utils.load_tuple_trees(params.tuple_tree_path, rng)
     indices_chosen = rng.choice(len(tuple_trees), params.num_starting_locations, replace=False)
@@ -144,11 +148,14 @@ def main(params: Params):
                    walk_strategy=params.walk_strategy)
 
     # Save to disk
-    os.makedirs(path.join("out_walks", params.run_name))
-    fname = path.join("out_walks", f"{params.run_name}.pick")
+    os.makedirs(path.join(OUT_DIR, params.run_name))
+    fname = path.join(OUT_DIR, f"{params.run_name}.pick")
     tqdm.write(f"Saving results in {fname}")
     misc.to_pickle(results, fname)
 
+
 if __name__ == '__main__':
-    main(Params())
+    arguments = docopt(__doc__)
+    weight_path = arguments['<weight_path>']
+    main(Params(weight_path))
     print("Done!")

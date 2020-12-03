@@ -5,6 +5,18 @@ import pickle
 import json
 
 
+def try_but_pass(fn, exception, print_flag: bool=True):
+    try:
+        out = fn()
+    except Exception as ex:
+        if print_flag:
+            print(ex)
+        out = None
+    return out
+
+
+
+
 def retry_n_times(fn, n, exception=Exception, interval=0, on_exception=None, args=(), kwargs=None):
     """
 

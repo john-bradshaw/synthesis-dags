@@ -13,7 +13,10 @@ TORCH_INT = torch.int64
 NP_INT = np.int64
 TORCH_FLT = torch.float32
 
+
 PAD_VALUE = -10000
+
+TOTAL_LOSS_TB_STRING = "total-loss"
 
 
 def get_repo_path():
@@ -26,7 +29,6 @@ def get_config() -> configparser.ConfigParser:
         _config = configparser.ConfigParser()
         _config.read(path.join(get_repo_path(), 'synthesis-dags-config.ini'))
     return _config
-
 
 
 def torch_device():

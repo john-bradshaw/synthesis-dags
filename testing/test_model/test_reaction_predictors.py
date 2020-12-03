@@ -51,7 +51,7 @@ def test_open_nmt_run_list_of_reactant_sets_input(monkeypatch):
         return MockResponse()
 
     monkeypatch.setattr(requests, "post", mock_post)
-    nmt_pred = reaction_predictors.OpenNMTServerPredictor("none")
+    nmt_pred = reaction_predictors.OpenNMTServerPredictor()
     out = nmt_pred._run_list_of_reactant_sets([
         multiset.FrozenMultiset(['C[S-]', '[Mg+]c1ccc(Cl)cc1']),
         multiset.FrozenMultiset(['CCOC(=O)C1CCN(C(=O)OC(C)(C)C)CC1', 'CC(C)(C)OC(=O)N1CCNCC1'])

@@ -502,7 +502,7 @@ class SynthesisTree:
 
 
 class CollateWithLargestFirstReordering:
-    def __init__(self, all_reactants: list, property_calc=None):
+    def __init__(self, all_reactants: list):
         self.reactants = all_reactants
         self.reactants_set = frozenset(all_reactants)
         self.base_mol_to_idx_dict = collections.OrderedDict([(x,i) for i, x in enumerate(self.reactants)])
@@ -511,7 +511,6 @@ class CollateWithLargestFirstReordering:
         graphs = [smiles_to_feats.DEFAULT_SMILES_FEATURIZER.smi_to_feats(smi) for smi in
                   tqdm.tqdm(self.base_mol_to_idx_dict.keys(), desc="Building reactant features")]
         self.reactant_graphs = graphs[0].concatenate(graphs)
-        self.property_calc = property_calc
 
     def _get_seq_for_each_data_item(self, list_of_tuple_trees):
         # Go through and convert all the tuple trees to networkx data structure and collect up all extra molecules that
@@ -635,14 +634,6 @@ class CollateWithLargestFirstReordering:
 
         original_syn_trees = [original_syn_trees[i] for i in array_containing_original_indcs]
 
-        if self.property_calc is not None:
-            final_smi = [x.root_smi for x in original_syn_trees]
-            properties = self.property_calc.evaluate_molecules(final_smi)
-            property_targets = torch.tensor(properties, dtype=settings.TORCH_FLT)
-        else:
-            property_targets = None
-
-
         return PredOutBatch(dags_for_inputs=dags_for_input, dags_at_construction_stages=construction_dags,
                             molecular_graphs=molecule_graphs, dags_id_at_index=dags_id_at_index,
                             sequence_action_kinds=sequence_action_kinds, sequence_choices=sequence_choices,
@@ -650,8 +641,8 @@ class CollateWithLargestFirstReordering:
                             sequence_masks_for_reactant_steps=reactant_masks,
                             mol_to_graph_idx=mol_to_graph_idx,
                             num_that_are_initial_reactants=num_initial_reactants_in_mol_to_graph_idx,
-                            final_molecule_indcs=final_molecule_indcs, syn_trees=original_syn_trees,
-                            property_targets=property_targets), array_containing_original_indcs
+                            final_molecule_indcs=final_molecule_indcs, syn_trees=original_syn_trees), \
+               array_containing_original_indcs
 
     def __call__(self, list_of_tuple_trees):
         (pred_out, mol_to_graph_idx,
@@ -686,13 +677,11 @@ class PredOutBatch:
     """
 
     syn_trees: typing.List[SynthesisTree]
-    property_targets: typing.Optional[torch.Tensor] = None
 
     molecular_graph_embeddings: typing.Optional[torch.Tensor] = None
     """
     Molecular graph embeddings when calculated -- filled in later.
     """
-
 
     def inplace_to(self, arg):
         self.dags_for_inputs.inplace_torch_to(arg)
@@ -704,8 +693,6 @@ class PredOutBatch:
         self.sequence_masks_for_edge_steps = self.sequence_masks_for_edge_steps.to(arg)
         self.sequence_masks_for_reactant_steps = self.sequence_masks_for_reactant_steps.to(arg)
         self.final_molecule_indcs = self.final_molecule_indcs.to(arg)
-        if self.property_targets is not None:
-            self.property_targets = self.property_targets.to(arg)
 
     @property
     def batch_size(self):

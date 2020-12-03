@@ -1,50 +1,31 @@
 
-
-import itertools
-import logging
 from os import path
 from time import strftime, gmtime
 import uuid
 import os
-import copy
-import typing
-import collections
 
-import requests
 import numpy as np
-import tabulate
 import torch
 from torch.utils import data
-from torch.utils import tensorboard
-from torch.nn import functional as F
 from torch import optim
 from tqdm import tqdm
-
 from ignite.engine import Events
 
-from autoencoders import logging_tools
-
-from syn_dags.script_utils import train_utils
-from syn_dags.data import synthesis_trees
-from syn_dags.data import smiles_to_feats
 from syn_dags.model import doggen
-from syn_dags.model import dog_decoder
-from syn_dags.model import reaction_predictors
 from syn_dags.utils import ignite_utils
-from syn_dags.utils import settings
 from syn_dags.utils import misc
+from syn_dags.utils.settings import TOTAL_LOSS_TB_STRING, torch_device
 from syn_dags.script_utils import tensorboard_helper as tb_
-from syn_dags.script_utils import dogae_utils
-from syn_dags.script_utils import opt_utils
+from syn_dags.script_utils import train_utils
+from syn_dags.script_utils import doggen_utils
 
 TB_LOGS_FILE = 'tb_logs'
 CHKPT_FOLDER = 'chkpts'
-TOTAL_LOSS_TB_STRING = "total-loss"
 
 
 class Params:
     def __init__(self):
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.device = torch_device()
 
         self.train_tree_path = "../dataset_creation/data/uspto-train-depth_and_tree_tuples.pick"
         self.val_tree_path = "../dataset_creation/data/uspto-valid-depth_and_tree_tuples.pick"
@@ -56,14 +37,15 @@ class Params:
         self.val_batch_size = 200
         self.learning_rate = 0.001
         self.gamma = 0.1
-        self.milestones = [100, 200]  # will not anneal the learning rate
+        self.milestones = [100, 200]
         self.expensive_ops_freq = 30
 
-
-        time_run = strftime("%y-%m-%d_%H:%M:%S", gmtime())
+        time_run = strftime("%y-%m-%d_%H-%M-%S", gmtime())
         self.exp_uuid = uuid.uuid4()
         self.run_name = f"dog_gen_train_{time_run}_{self.exp_uuid}"
         print(f"Run name is {self.run_name}\n\n")
+
+        self.log_for_reaction_predictor_path = path.join("logs", f"reactions-{self.run_name}.log")
 
 
 def validation(model, mean_loss_fn, dataloader, prepare_batch, device, tb_logger):
@@ -73,60 +55,29 @@ def validation(model, mean_loss_fn, dataloader, prepare_batch, device, tb_logger
     for batch in tqdm(dataloader):
         with torch.no_grad():
             batch = prepare_batch(batch, device)
-            loss = mean_loss_fn(model, *batch)
+            loss = mean_loss_fn(model, batch)
         nitems_batch = len(batch)
         summed_loss += nitems_batch * loss
         num_items += nitems_batch
     tb_logger.add_scalar(TOTAL_LOSS_TB_STRING, summed_loss/num_items)
-
     return summed_loss/num_items
 
 
 def main(params: Params):
+    # # Random Seeds
     rng = np.random.RandomState(4545)
     torch.manual_seed(2562)
-    # torch.backends.cudnn.deterministic = True
 
-    # Data
+    # # Create a folder to store the checkpoints.
+    os.makedirs(path.join(CHKPT_FOLDER, params.run_name))
+
+    # # Data
     train_trees = train_utils.load_tuple_trees(params.train_tree_path, rng)
     val_trees = train_utils.load_tuple_trees(params.val_tree_path, rng)
     print(f"Number of trees in valid set: {len(val_trees)}")
-
     starting_reactants = train_utils.load_reactant_vocab(params.reactant_vocab_path)
 
-    collate_func = synthesis_trees.CollateWithLargestFirstReordering(starting_reactants, None)
-
-    def __collate_func(*args, **kwargs):
-        pred_out_batch, new_order = collate_func(*args, **kwargs)
-        return pred_out_batch, None
-
-    train_dataloader = data.DataLoader(train_trees, batch_size=params.batch_size,
-                                       num_workers=params.num_dataloader_workers, collate_fn=__collate_func,
-                                       shuffle=True)
-    val_dataloader = data.DataLoader(val_trees, batch_size=params.val_batch_size,
-                                     num_workers=params.num_dataloader_workers,
-                                     collate_fn=__collate_func, shuffle=False)
-
-    # Model -- set up individual components
-    mol_to_graph_idx_for_reactants = collate_func.base_mol_to_idx_dict.copy()
-    reactant_graphs = copy.copy(collate_func.reactant_graphs)
-    reactant_graphs.inplace_torch_to(params.device)
-    reactant_vocab = dog_decoder.DOGGenerator.ReactantVocab(reactant_graphs, mol_to_graph_idx_for_reactants)
-
-    smi2graph_func = lambda smi: smiles_to_feats.DEFAULT_SMILES_FEATURIZER.smi_to_feats(smi)
-    reaction_predictor = reaction_predictors.OpenNMTServerPredictor()
-
-    # Add a logger to the reaction predictor so can find out the reactions it predicts later.
-    log_hndlr = logging.FileHandler(path.join("logs", f"reactions-{params.run_name}.log"))
-    log_hndlr.setLevel(logging.DEBUG)
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    log_hndlr.setFormatter(formatter)
-    os.makedirs(path.join(CHKPT_FOLDER, params.run_name))
-    reaction_predictor.logger.addHandler(log_hndlr)
-    reaction_predictor.logger.setLevel(logging.DEBUG)
-    reaction_predictor.logger.propagate = False
-
-    # Model
+    # # Model Params
     dg_params = {
         "latent_dim": 50,
         "decoder_params": dict(gru_insize=160, gru_hsize=512, num_layers=3, gru_dropout=0.1, max_steps=100),
@@ -134,25 +85,34 @@ def main(params: Params):
                                           embedding_dim=160, num_layers=5),
     }
 
-    model, hparams = doggen.get_dog_gen(reaction_predictor, smi2graph_func, reactant_vocab, dg_params)
-    model = model.to(params.device)
+    # # Model
+    model, collate_func, model_other_parts = doggen_utils.load_doggen_model(params.device, params.log_for_reaction_predictor_path,
+                                            doggen_train_details=doggen_utils.DoggenTrainDetails(starting_reactants, dg_params))
 
-    # Optimizer
+    # # Dataloaders
+    train_dataloader = data.DataLoader(train_trees, batch_size=params.batch_size,
+                                       num_workers=params.num_dataloader_workers, collate_fn=collate_func,
+                                       shuffle=True)
+    val_dataloader = data.DataLoader(val_trees, batch_size=params.val_batch_size,
+                                     num_workers=params.num_dataloader_workers,
+                                     collate_fn=collate_func, shuffle=False)
+
+    # # Optimizer
     optimizer = optim.Adam(model.parameters(), lr=params.learning_rate)
     lr_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=params.milestones, gamma=params.gamma)
 
-    # Tensorboard:
-    # Set up some loggers
+    # # Tensorboard loggers
     tb_writer_train = tb_.get_tb_writer(f"{TB_LOGS_FILE}/{params.run_name}_train")
     tb_writer_train.global_step = 0
-    tb_writer_train.add_hparams({**misc.unpack_class_into_params_dict(hparams, prepender="model:"),
+    tb_writer_train.add_hparams({**misc.unpack_class_into_params_dict(model_other_parts['hparams'], prepender="model:"),
                                  **misc.unpack_class_into_params_dict(params, prepender="train:")}, {})
     tb_writer_val = tb_.get_tb_writer(f"{TB_LOGS_FILE}/{params.run_name}_val")
 
-    # Create ignite parts
-    def loss_fn(model: doggen.DogGen, x, y):
+    # # Create Ignite trainer
+    def loss_fn(model: doggen.DogGen, x):
         # Outside the model shall compute the embeddings of the graph -- these are needed in both the encoder
         # and decoder so saves compute to just compute them once.
+        x, new_order = x
         embedded_graphs = model.mol_embdr(x.molecular_graphs)
         x.molecular_graph_embeddings = embedded_graphs
         new_node_feats_for_dag = x.molecular_graph_embeddings[x.dags_for_inputs.node_features.squeeze(), :]
@@ -162,20 +122,19 @@ def main(params: Params):
         return loss
 
     def prepare_batch(batch, device):
-        x, y = batch
+        x, new_order = batch
         x.inplace_to(device)
-        return x, y
+        return x, new_order
 
     def setup_for_val():
         tb_writer_val.global_step = tb_writer_train.global_step  # match the steps
         model.eval()
 
-    trainer, timers = ignite_utils.create_supervised_trainer_timers(
+    trainer, timers = ignite_utils.create_unsupervised_trainer_timers(
         model, optimizer, loss_fn, device=params.device, prepare_batch=prepare_batch
     )
 
-
-    print("Beginning Training!")
+    # # Now create the Ignite callbacks for dealing with the progressbar and performing validation etc...
     desc = "ITERATION - loss: {:.2f}"
     pbar = tqdm(initial=0, leave=False, total=len(train_dataloader), desc=desc.format(0))
 
@@ -211,12 +170,12 @@ def main(params: Params):
             'model': model.state_dict(),
             'optimizer': optimizer.state_dict(),
             'lr_scheduler': lr_scheduler.state_dict(),
-            'mol_to_graph_idx_for_reactants': mol_to_graph_idx_for_reactants,
+            'mol_to_graph_idx_for_reactants': model_other_parts['mol_to_graph_idx_for_reactants'],
             'run_name': params.run_name,
             'iter': engine.state.iteration,
             'epoch': engine.state.epoch,
-            'model_params': hparams,
-        },
+            'model_params': dg_params,
+            },
             path.join(CHKPT_FOLDER, params.run_name, f'epoch-{engine.state.epoch}_time-{time_chkpt}.pth.pick'))
 
         # Reset the progress bar and run the LR scheduler.
@@ -232,8 +191,9 @@ def main(params: Params):
         val_loss = validation(model, loss_fn, val_dataloader, prepare_batch, params.device, tb_writer_val)
         print(f"validation loss is {val_loss}")
 
+    # # Now we can train!
+    print("Beginning Training!")
     trainer.run(train_dataloader, max_epochs=params.num_epochs)
-
     pbar.close()
 
 
