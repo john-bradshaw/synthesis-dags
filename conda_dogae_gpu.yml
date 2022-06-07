@@ -22,6 +22,7 @@ dependencies:
   - matplotlib
   - pytest=6.1.2
   - pip:
+    - protobuf==3.14
     - docopt==0.6.2
     - keras==2.3.1
     - fcd==1.1
