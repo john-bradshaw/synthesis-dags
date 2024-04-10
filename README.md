@@ -35,10 +35,11 @@ Then perform the following steps:
     c. Install the relevant Python packages via installing an appropriate Conda environment, e.g. `conda env create -f conda_mtransformer_gpu.yml`   
     d. Activate the conda environment, e.g. `conda activate mtransformer_py3.6_pt0.4` (if you download the conda environment from this repo) 
     e. Add the weights to the Transformer directory (wherever you cloned it) inside a `saved_models` subdirectory. These weights
-    can be downloaded from    
-     [Google Drive](https://drive.google.com/file/d/1ogXzAg71BOs9SBrVt-umgcdc1_0ijUvU/view?usp=sharing):  
-         ```shasum -a 256 molecular_transformer_weights.pt
-        ## returns 93199b61da0a0f864e1d37a8a80a44f0ca9455645e291692e89d5405e786b450  molecular_transformer_weights.pt```  
+    can be downloaded from [Figshare here](https://figshare.com/articles/software/molecular_transformer_weights_pt/13325969). 
+      ```bash
+      shasum -a 256 molecular_transformer_weights.pt
+      ## returns 93199b61da0a0f864e1d37a8a80a44f0ca9455645e291692e89d5405e786b450  molecular_transformer_weights.pt
+      ```
      f. Inside the `available_models` subdirectory of the Transformer repo copy the `misc/mtransformer_example_server.conf.json` 
      file from this repo (you can change these parameters as you wish) into the Molecular Transformer repo.  
      g. From the top level of the Transformer repo start the server, with e.g. `CUDA_VISIBLE_DEVICES="0,1" python server.py --config available_models/mtransformer_example_server.conf.json`  
@@ -47,9 +48,9 @@ Then perform the following steps:
     I assume you're running the Transformer on the same machine as our code, if not you'll want to edit 
     `synthesis-dags-config.ini` such that our code can find the Transformer server.
     Now just leave this server running in this shell and the code in this repo will communicate with it when necessary.   
-3. Back in the shell which you were using in step 1, unzip the `uspto.zip` folder in this repo<sup>[†](#refDagger)</sup>  
+4. Back in the shell which you were using in step 1, unzip the `uspto.zip` folder in this repo<sup>[†](#refDagger)</sup>  
 and in `scripts/dataset_creation/data.zip`.
-4. (optional) You may want to test that the installation worked by running our unittests under `testing` (these use `pytest`).
+5. (optional) You may want to test that the installation worked by running our unittests under `testing` (these use `pytest`).
 It's also probably a good idea to check that the Transformer is working by running the script `functional_tests/reaction_predictor_server_checker.py`
 and checking that it returns a sensible result.
 
